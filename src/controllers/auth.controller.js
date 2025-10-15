@@ -8,11 +8,13 @@ export const signup = async (req, res) => {
     const { fullname, username, email, password } = req.body
 
     try {
+        // return if data is missing
         if (!fullname || !username || !email || !password)
             return res
                 .status(400)
-                .json({ message: 'All fields are required.' })
+                .json({ message: 'Missing credentials.' })
 
+        // basic pwd check
         if (password.length < 8)
             return res
                 .status(400)
@@ -72,10 +74,74 @@ export const signup = async (req, res) => {
 
     } catch (e) {
         console.log(`Error signing up: ${e}`);
-        res.status(400).json({ message: 'Internal Server Error creating account.' })
+        res.status(400)
+            .json({ message: 'Internal Server Error creating account.' })
     }
 }
 
-export const signin = () => { }
+export const signin = async (req, res) => {
+    // unpack data
+    const { identifier, password } = req.body
 
-export const signout = () => { }
+    try {
+        // return if data is missing
+        if (!identifier || !password)
+            res.status(400)
+                .json({ message: 'Missing creadentials.' })
+
+        // clean up just in case
+        const login = String(identifier).trim();
+        // determine what user used for auth
+        const isEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(login);
+
+        const user = await User.findOne(
+            isEmail ? { email: login.toLowerCase() } : { username: login }
+        )
+
+        if (!user)
+            res.status(400)
+                .json({ message: 'Invalid creadentials.' })
+
+        // comparing input with db
+        const isPassword = await bcrypt.compare(password, user.password)
+
+        if (!isPassword)
+            res.status(400)
+                .json({ message: 'Invalid creadentials.' })
+
+        // giving jwt in cookies
+        generateToken(user._id, res)
+
+        res.status(200)
+            .json({
+                _id: user._id,
+                fullname: user.fullname,
+                username: user.username,
+                email: user.email,
+                bio: user.bio ?? null,
+                createdAt: user.createdAt,
+                updatedAt: user.updatedAt,
+                profilePic: user.profilePic?.imageURL ?? null,
+                location: user.location ?? null
+            })
+
+    } catch (e) {
+        console.log(`Error signing in: ${e}`);
+        res.status(400)
+            .json({ message: 'Internal Server Error signing in.' })
+    }
+}
+
+export const signout = async (req, res) => {
+    try {
+        // just removing session
+        res.cookie('jwt', '', { maxAge: 0 })
+
+        res.status(200)
+            .json({ message: 'Logged Out' })
+    } catch (e) {
+        console.log(`Error signing out: ${e}`);
+        res.status(400)
+            .json({ message: 'Internal Server Error signing out.' })
+    }
+}

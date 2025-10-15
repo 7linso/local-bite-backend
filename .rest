@@ -1,14 +1,29 @@
 @baseUrl = http://localhost:3000/local-bite/api/v1
 @json = application/json
 
-#Sign Up
+###Sign Up
 # @name signup
 POST {{baseUrl}}/auth/signup
 Content-Type: {{json}}
 
 {
-    "email": "test1@gmail.com",
+    "email": "test11@gmail.com",
     "fullname": "John Doe",
-    "username": "john_doe1",
+    "username": "john_doe11",
     "password": "secret1234"
 }
+
+###Sign In
+# @name signin
+POST {{baseUrl}}/auth/signin
+Content-Type: {{json}}
+
+{
+    "identifier": "test11@gmail.com",
+    "password": "secret1234"
+}
+
+###Sign Out
+# @name signout
+POST {{baseUrl}}/auth/signout
+Content-Type: {{json}}
