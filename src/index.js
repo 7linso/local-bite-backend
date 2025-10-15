@@ -1,0 +1,42 @@
+import express from 'express'
+import 'dotenv/config'
+import cookieParser from 'cookie-parser'
+import cors from 'cors'
+import authRoutes from './routes/auth.router.js'
+import { connectDB } from './lib/db.js'
+
+const PORT = Number(process.env.PORT) || 4000;
+const BASIC_URL = process.env.BASIC_URL
+
+// start app
+const app = express()
+
+// middleware
+app.use(express.json())
+
+app.use(cookieParser())
+
+app.use(
+    cors({
+        origin: 'http://localhost:5173',
+        credentials: true,
+        methods: ['GET', 'POST', 'PATCH', 'DELETE'],
+        allowedHeaders: ['Content-Type', 'Authorization']
+    })
+)
+
+// routes
+app.get('/', (req, res) => res.json({ message: 'API is running 🚀' }));
+
+app.use(`${BASIC_URL}/auth`, authRoutes)
+
+// connection
+app.listen((PORT), () => {
+    console.log(`server running on PORT ${PORT}`)
+    connectDB()
+})
+
+process.on('unhandledRejection', (err) => {
+    console.error('Unhandled rejection:', err);
+    process.exit(1);
+});
