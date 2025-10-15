@@ -32,5 +32,10 @@ so here we are, stupid me
 - node-geocoder i guess for geocoding
 - coming soon
 
+# api testing
+
+i am using [**REST Client**](https://marketplace.visualstudio.com/items?itemName=humao.rest-client) extension for vs code to easily test api endpoints directly from the `.rest` file
+
+
 # license
 MIT. do what you want
