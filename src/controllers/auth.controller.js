@@ -145,3 +145,28 @@ export const signout = async (req, res) => {
             .json({ message: 'Internal Server Error signing out.' })
     }
 }
+
+export const me = async (req, res) => {
+    try {
+        const user = await User.findById(req.userId)
+        if (!user)
+            return res
+                .status(404)
+                .json({ message: 'User not found' })
+
+        res.json({
+            _id: user._id,
+            fullname: user.fullname,
+            username: user.username,
+            email: user.email,
+            bio: user.bio ?? null,
+            createdAt: user.createdAt,
+            updatedAt: user.updatedAt,
+            profilePic: user.profilePic?.imageURL ?? null,
+            location: user.location ?? null
+        })
+    } catch (e) {
+        res.status(500)
+            .json({ message: 'Internal Server Error' })
+    }
+}
