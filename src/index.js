@@ -5,14 +5,15 @@ import cors from 'cors'
 import authRoutes from './routes/auth.router.js'
 import { connectDB } from './lib/db.js'
 
-const PORT = Number(process.env.PORT) || 4000;
+const PORT = Number(process.env.PORT) || 3001;
 const BASIC_URL = process.env.BASIC_URL
 
 // start app
 const app = express()
 
 // middleware
-app.use(express.json())
+app.use(express.json({ limit: "5mb" }));
+app.use(express.urlencoded({ extended: true, limit: "5mb" }));
 
 app.use(cookieParser())
 

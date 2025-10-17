@@ -59,7 +59,7 @@ export const signup = async (req, res) => {
         // giving jwt in cookies 
         generateToken(newUser._id, res)
 
-        res.status(201)
+        return res.status(201)
             .json({
                 _id: newUser._id,
                 fullname: newUser.fullname,
@@ -74,7 +74,7 @@ export const signup = async (req, res) => {
 
     } catch (e) {
         console.log(`Error signing up: ${e}`);
-        res.status(400)
+        return res.status(400)
             .json({ message: 'Internal Server Error creating account.' })
     }
 }
@@ -86,7 +86,7 @@ export const signin = async (req, res) => {
     try {
         // return if data is missing
         if (!identifier || !password)
-            res.status(400)
+            return res.status(400)
                 .json({ message: 'Missing creadentials.' })
 
         // clean up just in case
@@ -99,20 +99,20 @@ export const signin = async (req, res) => {
         )
 
         if (!user)
-            res.status(400)
+            return res.status(400)
                 .json({ message: 'Invalid creadentials.' })
 
         // comparing input with db
         const isPassword = await bcrypt.compare(password, user.password)
 
         if (!isPassword)
-            res.status(400)
+            return res.status(400)
                 .json({ message: 'Invalid creadentials.' })
 
         // giving jwt in cookies
         generateToken(user._id, res)
 
-        res.status(200)
+        return res.status(200)
             .json({
                 _id: user._id,
                 fullname: user.fullname,
@@ -127,7 +127,7 @@ export const signin = async (req, res) => {
 
     } catch (e) {
         console.log(`Error signing in: ${e}`);
-        res.status(400)
+        return res.status(400)
             .json({ message: 'Internal Server Error signing in.' })
     }
 }
@@ -137,11 +137,11 @@ export const signout = async (req, res) => {
         // just removing session
         res.cookie('jwt', '', { maxAge: 0 })
 
-        res.status(200)
+        return res.status(200)
             .json({ message: 'Logged Out' })
     } catch (e) {
         console.log(`Error signing out: ${e}`);
-        res.status(400)
+        return res.status(400)
             .json({ message: 'Internal Server Error signing out.' })
     }
 }
@@ -154,19 +154,96 @@ export const me = async (req, res) => {
                 .status(404)
                 .json({ message: 'User not found' })
 
-        res.json({
-            _id: user._id,
-            fullname: user.fullname,
-            username: user.username,
-            email: user.email,
-            bio: user.bio ?? null,
-            createdAt: user.createdAt,
-            updatedAt: user.updatedAt,
-            profilePic: user.profilePic?.imageURL ?? null,
-            location: user.location ?? null
-        })
+        return res
+            .status(200)
+            .json({
+                _id: user._id,
+                fullname: user.fullname,
+                username: user.username,
+                email: user.email,
+                bio: user.bio ?? null,
+                createdAt: user.createdAt,
+                updatedAt: user.updatedAt,
+                profilePic: user.profilePic?.imageURL ?? null,
+                location: user.location ?? null
+            })
     } catch (e) {
         res.status(500)
             .json({ message: 'Internal Server Error' })
+    }
+}
+
+export const updateProfilePic = async (req, res) => {
+    try {
+        let { profilePic } = req.body
+        const userId = req.user._id
+
+        if (!userId)
+            return res
+                .status(401)
+                .json({ message: 'Unauthorized.' })
+
+        if (!profilePic || typeof profilePic !== 'string')
+            return res
+                .status(400)
+                .json({ message: 'Profile picture is required.' })
+
+        const user = await User.findById(userId).lean()
+        if (!user)
+            return res
+                .status(404)
+                .json({ message: 'User not found.' })
+
+        profilePic = profilePic.trim()
+        const isDataUrl = profilePic.trim().startsWith('data:')
+        const uploadSource = isDataUrl ? profilePic : `data:image/jpeg;base64,${profilePic}`
+
+        const upload = await cloudinary.uploader.upload(uploadSource, {
+            folder: `local-bite/users/${userId}/profile`,
+            overwrite: true
+        })
+        console.log("[updateProfile] cloudinary.secure_url:", upload?.secure_url);
+
+        if (!upload?.secure_url)
+            return res
+                .status(502)
+                .json({ message: 'Upload failed.' })
+
+        const newEntry = {
+            imageURL: upload.secure_url,
+            publicId: upload.public_id,
+            postedAt: new Date(upload.created_at || Date.now())
+        }
+
+        const updatedUser = await User.findByIdAndUpdate(
+            userId,
+            { $set: { profilePic: newEntry } },
+            { new: true, runValidators: true, select: '-password' },
+        ).lean()
+
+        if (!updatedUser)
+            return res
+                .status(404)
+                .json({ message: 'User not found.' })
+
+        return res.status(200)
+            .json({
+                _id: updatedUser._id,
+                fullname: updatedUser.fullname,
+                username: updatedUser.username,
+                email: updatedUser.email,
+                bio: updatedUser.bio ?? null,
+                createdAt: updatedUser.createdAt,
+                updatedAt: updatedUser.updatedAt,
+                profilePic: updatedUser.profilePic?.imageURL ?? null,
+                location: updatedUser.location ?? null
+            })
+
+
+    } catch (e) {
+        console.log(`Error updating profile pic: ${e}`);
+        return res
+            .status(400)
+            .json({ message: 'Internal Server Error updating profile picture.' })
     }
 }
