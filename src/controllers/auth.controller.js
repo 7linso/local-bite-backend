@@ -20,6 +20,11 @@ export const signup = async (req, res) => {
                 .status(400)
                 .json({ message: 'Password must be at least 8 characters long.' })
 
+        const isEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+        if (!isEmail)
+            return res.status(400)
+                .json('Not valid email')
+
         const normalizedEmail = email.trim().toLowerCase()
 
         // don't create user if email is already taken
@@ -174,9 +179,10 @@ export const me = async (req, res) => {
 }
 
 export const updateProfilePic = async (req, res) => {
+    let { profilePic } = req.body
+
     try {
-        let { profilePic } = req.body
-        const userId = req.user._id
+        const userId = req.userId
 
         if (!userId)
             return res
@@ -194,20 +200,24 @@ export const updateProfilePic = async (req, res) => {
                 .status(404)
                 .json({ message: 'User not found.' })
 
+        const oldProfilePic = user.profilePic.publicId
+
         profilePic = profilePic.trim()
-        const isDataUrl = profilePic.trim().startsWith('data:')
+        const isDataUrl = profilePic.startsWith('data:')
         const uploadSource = isDataUrl ? profilePic : `data:image/jpeg;base64,${profilePic}`
 
         const upload = await cloudinary.uploader.upload(uploadSource, {
             folder: `local-bite/users/${userId}/profile`,
             overwrite: true
         })
-        console.log("[updateProfile] cloudinary.secure_url:", upload?.secure_url);
 
         if (!upload?.secure_url)
             return res
                 .status(502)
                 .json({ message: 'Upload failed.' })
+
+        if (oldProfilePic) 
+            await cloudinary.uploader.destroy(oldProfilePic, { resource_type: "image" })
 
         const newEntry = {
             imageURL: upload.secure_url,
@@ -239,11 +249,110 @@ export const updateProfilePic = async (req, res) => {
                 location: updatedUser.location ?? null
             })
 
-
     } catch (e) {
         console.log(`Error updating profile pic: ${e}`);
         return res
             .status(400)
             .json({ message: 'Internal Server Error updating profile picture.' })
+    }
+}
+
+export const updateProfile = async (req, res) => {
+    try {
+        const userId = req.userId
+        let { fullname, username, email, bio } = req.body
+
+        if (!userId)
+            return res.status(401)
+                .json({ message: 'Unauthorized.' })
+
+        const user = await User.findById(userId)
+        if (!user)
+            return res.status(400)
+                .json({ message: 'User not found.' })
+
+        const update = {}
+
+        if (fullname !== undefined)
+            update.fullname = fullname.trim()
+
+        if (username !== undefined) {
+            username = username.trim()
+
+            if (username !== user.username) {
+                const existingUsername = await User.findOne({
+                    username: new RegExp(`^${username}$`, "i"),
+                    _id: { $ne: userId },
+                }).lean()
+                if (existingUsername)
+                    return res.status(400)
+                        .json({ message: "Username already taken." })
+
+                update.username = username
+            }
+        }
+
+        if (email !== undefined) {
+            email = email.trim().toLowerCase()
+
+            const isEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+
+            if (!isEmail)
+                return res.status(400)
+                    .json({ message: "Not valid email." })
+
+            const existingEmail = await User.findOne({
+                email: email,
+                _id: { $ne: userId }
+            }).lean()
+
+            if (existingEmail)
+                return res.status(400)
+                    .json({ message: 'Email already used.' })
+
+            update.email = email
+        }
+
+        if (bio !== undefined) {
+            bio = bio.trim()
+
+            if (bio.length > 200)
+                return res.status(400)
+                    .json({ message: 'Bio is too long. Max 200 characters.' })
+
+            update.bio = bio
+        }
+
+        if (Object.keys(update).length === 0) {
+            return res.status(400)
+                .json({ message: "No changes provided." });
+        }
+        const updatedUser = await User.findByIdAndUpdate(
+            userId,
+            { $set: update },
+            { new: true, runValidators: true, select: '-password' }
+        )
+
+        if (!updatedUser)
+            return res.status(400)
+                .json({ message: 'Failed to update user.' })
+
+        return res.status(200)
+            .json({
+                _id: updatedUser._id,
+                fullname: updatedUser.fullname,
+                username: updatedUser.username,
+                email: updatedUser.email,
+                bio: updatedUser.bio ?? null,
+                createdAt: updatedUser.createdAt,
+                updatedAt: updatedUser.updatedAt,
+                profilePic: updatedUser.profilePic?.imageURL ?? null,
+                location: updatedUser.location ?? null
+            })
+
+    } catch (e) {
+        console.log(`Error updating profile: ${e}`);
+        return res.status(400)
+            .json({ message: 'Internal Server Error editing account.' })
     }
 }

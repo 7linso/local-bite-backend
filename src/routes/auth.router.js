@@ -4,7 +4,8 @@ import {
     signin,
     signout,
     me,
-    updateProfilePic
+    updateProfilePic,
+    updateProfile
 } from '../controllers/auth.controller.js'
 import { requireAuth } from '../middleware/auth.middleware.js'
 
@@ -19,5 +20,7 @@ router.post('/signout', signout)
 router.get('/me', requireAuth, me)
 
 router.patch('/update-profile-pic', requireAuth, updateProfilePic)
+
+router.patch('/update-profile', requireAuth, updateProfile)
 
 export default router
