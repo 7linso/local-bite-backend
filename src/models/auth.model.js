@@ -1,5 +1,4 @@
-import mongoose from 'mongoose'
-import { LocationSchema } from './location.model.js'
+import mongoose from 'mongoose';
 
 const ProfilePicSchema = new mongoose.Schema(
     {
@@ -14,45 +13,58 @@ const ProfilePicSchema = new mongoose.Schema(
         postedAt: {
             type: Date,
             default: Date.now
-        }
+        },
     },
     { _id: false }
-)
+);
 
 const UserSchema = new mongoose.Schema(
     {
-        email: {
-            type: String,
-            required: true,
-            unique: true
-        },
         fullname: {
             type: String,
-            required: true
+            required: true,
+            trim: true
         },
         username: {
             type: String,
             required: true,
-            unique: true
+            unique: true,
+            index: true,
+            trim: true
+        },
+        email: {
+            type: String,
+            required: true,
+            unique: true,
+            index: true,
+            trim: true
         },
         password: {
             type: String,
             required: true,
-            minLength: 8,
+            minlength: 8,
+            trim: true
+        },
+        bio: {
+            type: String,
+            maxlength: 200,
+            trim: true
         },
         profilePic: {
             type: ProfilePicSchema,
             default: undefined
         },
-        bio: {
-            type: String,
-            maxLength: 200
+        
+        favs: {
+            type: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Recipe' }],
+            default: [],
         },
-        location: {
-            type: LocationSchema,
-        }
+        defaultLocationId: {
+            type: mongoose.Schema.Types.ObjectId, ref: 'Location',
+            default: null
+        },
     },
     { timestamps: true }
-)
+);
 
-export const User = mongoose.model('User', UserSchema)
+export const User = mongoose.model('User', UserSchema);

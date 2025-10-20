@@ -1,7 +1,9 @@
-import bcrypt from "bcryptjs";
-import cloudinary from "../lib/cloudinary.js";
-import { User } from "../models/auth.model.js";
+import bcrypt from "bcryptjs"
+import cloudinary from "../lib/cloudinary.js"
+import { User } from "../models/auth.model.js"
 import { generateToken } from '../lib/utils.js'
+import { resolveOrCreateLocation } from '../lib/location.js'
+import 'dotenv/config'
 
 export const signup = async (req, res) => {
     // unpack data
@@ -22,7 +24,8 @@ export const signup = async (req, res) => {
 
         const isEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
         if (!isEmail)
-            return res.status(400)
+            return res
+                .status(400)
                 .json('Not valid email')
 
         const normalizedEmail = email.trim().toLowerCase()
@@ -64,7 +67,8 @@ export const signup = async (req, res) => {
         // giving jwt in cookies 
         generateToken(newUser._id, res)
 
-        return res.status(201)
+        return res
+            .status(201)
             .json({
                 _id: newUser._id,
                 fullname: newUser.fullname,
@@ -74,12 +78,21 @@ export const signup = async (req, res) => {
                 createdAt: newUser.createdAt,
                 updatedAt: newUser.updatedAt,
                 profilePic: newUser.profilePic?.imageURL ?? null,
-                location: newUser.location ?? null
+                favs: newUser.favs ?? null,
+                defaultLocationId: newUser.defaultLocationId?._id ?? null,
+                defaultLocation: newUser.defaultLocationId
+                    ? {
+                        _id: newUser.defaultLocationId._id,
+                        locality: newUser.defaultLocationId.locality,
+                        area: newUser.defaultLocationId.area,
+                        country: newUser.defaultLocationId.country
+                    } : null
             })
 
     } catch (e) {
         console.log(`Error signing up: ${e}`);
-        return res.status(400)
+        return res
+            .status(400)
             .json({ message: 'Internal Server Error creating account.' })
     }
 }
@@ -91,7 +104,8 @@ export const signin = async (req, res) => {
     try {
         // return if data is missing
         if (!identifier || !password)
-            return res.status(400)
+            return res
+                .status(400)
                 .json({ message: 'Missing creadentials.' })
 
         // clean up just in case
@@ -100,24 +114,33 @@ export const signin = async (req, res) => {
         const isEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(login);
 
         const user = await User.findOne(
-            isEmail ? { email: login.toLowerCase() } : { username: login }
-        )
+            isEmail ?
+                { email: login.toLowerCase() }
+                :
+                { username: login }
+        ).populate({
+            path: 'defaultLocationId',
+            select: 'locality area country'
+        })
 
         if (!user)
-            return res.status(400)
+            return res
+                .status(400)
                 .json({ message: 'Invalid creadentials.' })
 
         // comparing input with db
         const isPassword = await bcrypt.compare(password, user.password)
 
         if (!isPassword)
-            return res.status(400)
+            return res
+                .status(400)
                 .json({ message: 'Invalid creadentials.' })
 
         // giving jwt in cookies
         generateToken(user._id, res)
 
-        return res.status(200)
+        return res
+            .status(200)
             .json({
                 _id: user._id,
                 fullname: user.fullname,
@@ -127,12 +150,21 @@ export const signin = async (req, res) => {
                 createdAt: user.createdAt,
                 updatedAt: user.updatedAt,
                 profilePic: user.profilePic?.imageURL ?? null,
-                location: user.location ?? null
+                favs: user.favs ?? null,
+                defaultLocationId: user.defaultLocationId?._id ?? null,
+                defaultLocation: user.defaultLocationId
+                    ? {
+                        _id: user.defaultLocationId._id,
+                        locality: user.defaultLocationId.locality,
+                        area: user.defaultLocationId.area,
+                        country: user.defaultLocationId.country
+                    } : null
             })
 
     } catch (e) {
         console.log(`Error signing in: ${e}`);
-        return res.status(400)
+        return res
+            .status(400)
             .json({ message: 'Internal Server Error signing in.' })
     }
 }
@@ -142,18 +174,26 @@ export const signout = async (req, res) => {
         // just removing session
         res.cookie('jwt', '', { maxAge: 0 })
 
-        return res.status(200)
+        return res
+            .status(200)
             .json({ message: 'Logged Out' })
     } catch (e) {
         console.log(`Error signing out: ${e}`);
-        return res.status(400)
+        return res
+            .status(400)
             .json({ message: 'Internal Server Error signing out.' })
     }
 }
 
 export const me = async (req, res) => {
     try {
-        const user = await User.findById(req.userId)
+        const user = await User
+            .findById(req.userId)
+            .populate({
+                path: 'defaultLocationId',
+                select: 'locality area country'
+            })
+
         if (!user)
             return res
                 .status(404)
@@ -170,7 +210,15 @@ export const me = async (req, res) => {
                 createdAt: user.createdAt,
                 updatedAt: user.updatedAt,
                 profilePic: user.profilePic?.imageURL ?? null,
-                location: user.location ?? null
+                favs: user.favs ?? null,
+                defaultLocationId: user.defaultLocationId?._id ?? null,
+                defaultLocation: user.defaultLocationId
+                    ? {
+                        _id: user.defaultLocationId._id,
+                        locality: user.defaultLocationId.locality,
+                        area: user.defaultLocationId.area,
+                        country: user.defaultLocationId.country
+                    } : null
             })
     } catch (e) {
         res.status(500)
@@ -216,7 +264,7 @@ export const updateProfilePic = async (req, res) => {
                 .status(502)
                 .json({ message: 'Upload failed.' })
 
-        if (oldProfilePic) 
+        if (oldProfilePic)
             await cloudinary.uploader.destroy(oldProfilePic, { resource_type: "image" })
 
         const newEntry = {
@@ -225,18 +273,25 @@ export const updateProfilePic = async (req, res) => {
             postedAt: new Date(upload.created_at || Date.now())
         }
 
-        const updatedUser = await User.findByIdAndUpdate(
-            userId,
-            { $set: { profilePic: newEntry } },
-            { new: true, runValidators: true, select: '-password' },
-        ).lean()
+        const updatedUser = await User
+            .findByIdAndUpdate(
+                userId,
+                { $set: { profilePic: newEntry } },
+                { new: true, runValidators: true, select: '-password' },
+            )
+            .populate({
+                path: 'defaultLocationId',
+                select: 'locality area country'
+            })
+            .lean()
 
         if (!updatedUser)
             return res
                 .status(404)
                 .json({ message: 'User not found.' })
 
-        return res.status(200)
+        return res
+            .status(200)
             .json({
                 _id: updatedUser._id,
                 fullname: updatedUser.fullname,
@@ -246,7 +301,15 @@ export const updateProfilePic = async (req, res) => {
                 createdAt: updatedUser.createdAt,
                 updatedAt: updatedUser.updatedAt,
                 profilePic: updatedUser.profilePic?.imageURL ?? null,
-                location: updatedUser.location ?? null
+                favs: updatedUser.favs ?? null,
+                defaultLocationId: updatedUser.defaultLocationId?._id ?? null,
+                defaultLocation: updatedUser.defaultLocationId
+                    ? {
+                        _id: updatedUser.defaultLocationId._id,
+                        locality: updatedUser.defaultLocationId.locality,
+                        area: updatedUser.defaultLocationId.area,
+                        country: updatedUser.defaultLocationId.country
+                    } : null
             })
 
     } catch (e) {
@@ -260,32 +323,43 @@ export const updateProfilePic = async (req, res) => {
 export const updateProfile = async (req, res) => {
     try {
         const userId = req.userId
-        let { fullname, username, email, bio } = req.body
+        let { fullname, username, email, bio, location } = req.body
 
         if (!userId)
-            return res.status(401)
+            return res
+                .status(401)
                 .json({ message: 'Unauthorized.' })
 
         const user = await User.findById(userId)
         if (!user)
-            return res.status(400)
+            return res
+                .status(400)
                 .json({ message: 'User not found.' })
 
         const update = {}
 
+        // normalize 
         if (fullname !== undefined)
-            update.fullname = fullname.trim()
+            fullname = String(fullname).trim()
+        if (username !== undefined)
+            username = String(username).trim()
+        if (email !== undefined)
+            email = String(email).trim().toLowerCase()
+        if (bio !== undefined)
+            bio = String(bio).trim()
+
+        if (fullname !== undefined)
+            update.fullname = fullname
 
         if (username !== undefined) {
-            username = username.trim()
-
             if (username !== user.username) {
                 const existingUsername = await User.findOne({
                     username: new RegExp(`^${username}$`, "i"),
                     _id: { $ne: userId },
                 }).lean()
                 if (existingUsername)
-                    return res.status(400)
+                    return res
+                        .status(400)
                         .json({ message: "Username already taken." })
 
                 update.username = username
@@ -293,51 +367,90 @@ export const updateProfile = async (req, res) => {
         }
 
         if (email !== undefined) {
-            email = email.trim().toLowerCase()
-
-            const isEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
-
+            const isEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)
             if (!isEmail)
-                return res.status(400)
+                return res
+                    .status(400)
                     .json({ message: "Not valid email." })
 
             const existingEmail = await User.findOne({
-                email: email,
+                email,
                 _id: { $ne: userId }
             }).lean()
 
             if (existingEmail)
-                return res.status(400)
+                return res
+                    .status(400)
                     .json({ message: 'Email already used.' })
 
             update.email = email
         }
 
         if (bio !== undefined) {
-            bio = bio.trim()
-
             if (bio.length > 200)
-                return res.status(400)
-                    .json({ message: 'Bio is too long. Max 200 characters.' })
-
+                return res
+                    .status(400)
+                    .json({ message: 'Bio is too long. Max 200 characters.' });
             update.bio = bio
         }
 
-        if (Object.keys(update).length === 0) {
-            return res.status(400)
-                .json({ message: "No changes provided." });
+        // update location only if all fields were set
+        if (location !== undefined) {
+            if (!location || typeof location !== 'object')
+                return res
+                    .status(400)
+                    .json({ message: 'Invalid location payload.' })
+
+            // normalize
+            const locality = String(location.locality ?? '').trim()
+            const area = String(location.area ?? '').trim()
+            const country = String(location.country ?? '').trim()
+
+            const missing = [];
+            if (!locality)
+                missing.push('locality')
+            if (!area)
+                missing.push('area')
+            if (!country)
+                missing.push('country')
+
+            if (missing.length)
+                return res
+                    .status(400)
+                    .json({ message: `Missing required location fields: ${missing.join(', ')}` })
+
+            try {
+                const locDoc = await resolveOrCreateLocation({ locality, area, country })
+                update.defaultLocationId = locDoc._id
+            } catch (e) {
+                const msg = e?.message || 'Failed to geocode.'
+                return res
+                    .status(400)
+                    .json({ message: msg })
+            }
         }
+
+        if (Object.keys(update).length === 0)
+            return res
+                .status(400)
+                .json({ message: "No changes provided." })
+
         const updatedUser = await User.findByIdAndUpdate(
             userId,
             { $set: update },
             { new: true, runValidators: true, select: '-password' }
-        )
+        ).populate({
+            path: 'defaultLocationId',
+            select: 'locality area country'
+        })
 
         if (!updatedUser)
-            return res.status(400)
+            return res
+                .status(400)
                 .json({ message: 'Failed to update user.' })
 
-        return res.status(200)
+        return res
+            .status(200)
             .json({
                 _id: updatedUser._id,
                 fullname: updatedUser.fullname,
@@ -347,12 +460,61 @@ export const updateProfile = async (req, res) => {
                 createdAt: updatedUser.createdAt,
                 updatedAt: updatedUser.updatedAt,
                 profilePic: updatedUser.profilePic?.imageURL ?? null,
-                location: updatedUser.location ?? null
+                favs: updatedUser.favs ?? null,
+                defaultLocationId: updatedUser.defaultLocationId?._id ?? null,
+                defaultLocation: updatedUser.defaultLocationId
+                    ? {
+                        _id: updatedUser.defaultLocationId._id,
+                        locality: updatedUser.defaultLocationId.locality,
+                        area: updatedUser.defaultLocationId.area,
+                        country: updatedUser.defaultLocationId.country
+                    } : null
             })
 
     } catch (e) {
-        console.log(`Error updating profile: ${e}`);
-        return res.status(400)
+        console.log(`Error updating profile: ${e}`)
+        return res
+            .status(500)
             .json({ message: 'Internal Server Error editing account.' })
+    }
+}
+
+export const deleteProfile = async (req, res) => {
+    try {
+        const userId = req.userId
+
+        if (!userId)
+            return res
+                .status(401)
+                .json({ message: 'Unauthorized.' })
+
+        const user = await User.findById(userId).lean()
+
+        if (!user)
+            return res
+                .status(400)
+                .json({ message: 'User not found.' })
+
+        const profilePic = user.profilePic
+        if (profilePic)
+            await cloudinary.uploader.destroy(profilePic.publicId, { resource_type: "image" })
+
+        await User.deleteOne({ _id: userId })
+
+        res.clearCookie('jwt', {
+            httpOnly: true,
+            sameSite: 'strict',
+            secure: process.env.NODE_ENV !== 'development'
+        })
+
+        return res
+            .status(204)
+            .json({ message: 'Account Deleted!' })
+
+    } catch (e) {
+        console.log(`Error deleting profile: ${e}`);
+        return res
+            .status(400)
+            .json({ message: 'Internal Server Error deleting profile.' })
     }
 }
