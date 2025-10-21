@@ -27,3 +27,8 @@ Content-Type: {{json}}
 # @name signout
 POST {{baseUrl}}/auth/signout
 Content-Type: {{json}}
+
+###Get All Coords
+# @name getAllLocCoords
+GET {{baseUrl}}/loc/all/coords
+Content-Type: {{json}}

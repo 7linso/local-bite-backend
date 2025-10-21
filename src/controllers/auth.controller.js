@@ -248,15 +248,14 @@ export const updateProfilePic = async (req, res) => {
                 .status(404)
                 .json({ message: 'User not found.' })
 
-        const oldProfilePic = user.profilePic.publicId
+        const oldPublicId = user.profilePic?.publicId || null;
 
         profilePic = profilePic.trim()
         const isDataUrl = profilePic.startsWith('data:')
         const uploadSource = isDataUrl ? profilePic : `data:image/jpeg;base64,${profilePic}`
 
         const upload = await cloudinary.uploader.upload(uploadSource, {
-            folder: `local-bite/users/${userId}/profile`,
-            overwrite: true
+            folder: `local-bite/users/${userId}/profile`
         })
 
         if (!upload?.secure_url)
@@ -264,8 +263,8 @@ export const updateProfilePic = async (req, res) => {
                 .status(502)
                 .json({ message: 'Upload failed.' })
 
-        if (oldProfilePic)
-            await cloudinary.uploader.destroy(oldProfilePic, { resource_type: "image" })
+        if (oldPublicId)
+            await cloudinary.uploader.destroy(oldPublicId, { resource_type: "image" })
 
         const newEntry = {
             imageURL: upload.secure_url,
