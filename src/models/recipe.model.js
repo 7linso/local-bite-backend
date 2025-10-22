@@ -21,6 +21,24 @@ const IngredientSchema = new mongoose.Schema(
     { _id: false }
 );
 
+const RecipePicSchema = new mongoose.Schema(
+    {
+        imageURL: {
+            type: String,
+            required: true
+        },
+        publicId: {
+            type: String,
+            required: true
+        },
+        postedAt: {
+            type: Date,
+            default: Date.now
+        },
+    },
+    { _id: false }
+);
+
 const RecipeSchema = new mongoose.Schema(
     {
         authorId: {
@@ -33,7 +51,7 @@ const RecipeSchema = new mongoose.Schema(
             type: String,
             required: true,
             trim: true,
-            maxlength: 200
+            maxlength: 100
         },
         description: {
             type: String,
@@ -48,7 +66,7 @@ const RecipeSchema = new mongoose.Schema(
                 message: 'At least one ingredient is required.',
             },
         },
-        steps: {
+        instructions: {
             type: [{
                 type: String,
                 trim: true,
@@ -60,6 +78,16 @@ const RecipeSchema = new mongoose.Schema(
                 message: 'At least one step is required.',
             },
         },
+        dishTypes: {
+            type: [String],
+            default: [],
+            enum: ['main', 'side', 'sauce', 'pastry', 'dessert', 'soup', 'drink', 'salad', 'other'],
+            index: true
+        },
+        recipePic:{
+            type: RecipePicSchema,
+            default: undefined
+        },
 
         locationId: {
             type: mongoose.Schema.Types.ObjectId,
@@ -67,33 +95,54 @@ const RecipeSchema = new mongoose.Schema(
             required: true,
             index: true,
         },
-        country_code: {
-            type: String,
-            required: true,
-            uppercase: true,
-            index: true,
-            minlength: 2,
-            maxlength: 2,
-        },
         point: {
-            type: { type: String, enum: ['Point'], default: 'Point' },
-            coordinates: {
-                type: [Number], // [lng, lat]
-                required: true,
-                validate: {
-                    validator: (v) => Array.isArray(v) && v.length === 2,
-                    message: 'point.coordinates must be [lng, lat]',
-                },
+            type: {
+                type: String,
+                enum: ['Point'],
+                default: 'Point',
+                required: true
             },
+            coordinates: {
+                type: [Number],
+                required: true,
+                validate: v => Array.isArray(v) && v.length === 2
+            }
         },
+
+        locationSnapshot: {
+            locality: {
+                type: String,
+                trim: true,
+                index: true
+            },
+            area: {
+                type: String,
+                trim: true,
+                index: true
+            },
+            country: {
+                type: String,
+                trim: true,
+                index: true
+            }
+        },
+
+        
     },
     { timestamps: true }
 );
 
-RecipeSchema.index({ point: '2dsphere' })
+RecipeSchema.index({
+    point: '2dsphere'
+})
+RecipeSchema.index({
+    'locationSnapshot.country': 1,
+    'locationSnapshot.area': 1,
+    'locationSnapshot.locality': 1
+})
 RecipeSchema.index(
     { authorId: 1, title: 1 },
     { unique: true, collation: { locale: 'en', strength: 2 } }
-);
+)
 
 export const Recipe = mongoose.model('Recipe', RecipeSchema);

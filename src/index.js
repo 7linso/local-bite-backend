@@ -4,6 +4,7 @@ import cookieParser from 'cookie-parser'
 import cors from 'cors'
 import authRoutes from './routes/auth.router.js'
 import locationRoutes from './routes/location.router.js'
+import recipeRoutes from './routes/recipe.router.js'
 import { connectDB } from './lib/db.js'
 
 const PORT = Number(process.env.PORT) || 3001;
@@ -32,6 +33,7 @@ app.get('/', (req, res) => res.json({ message: 'API is running 🚀' }));
 
 app.use(`${BASIC_URL}/auth`, authRoutes)
 app.use(`${BASIC_URL}/loc`, locationRoutes)
+app.use(`${BASIC_URL}/recipes`, recipeRoutes)
 
 // connection
 app.listen((PORT), () => {

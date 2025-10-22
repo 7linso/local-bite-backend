@@ -10,7 +10,6 @@ this is really simple backend written with express so setup is easy-peasy
 npm i
 npm run dev
 ```
-BUT you don't have .env . i am a troll :)
 
 ## desc
 
@@ -27,15 +26,16 @@ so here we are, stupid me
 
 # tech stack
 - express
-- mongoose (mongo) + cloudinary for storage
+- mongoose (mongodb) + cloudinary for storage
 - cors, cookie-parser, jsonwebtoken and bcryptjs for auth
-- node-geocoder i guess for geocoding
-- coming soon
+- i18n-iso-countries to get country codes
+
+# curr working on
+- endpoints for recipes (post, get, get all, delete, patch)
 
 # api testing
 
 i am using [**REST Client**](https://marketplace.visualstudio.com/items?itemName=humao.rest-client) extension for vs code to easily test api endpoints directly from the `.rest` file
-
 
 # license
 MIT. do what you want
