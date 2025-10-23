@@ -1,5 +1,10 @@
 import { Recipe } from '../models/recipe.model.js'
 import { resolveOrCreateLocation } from '../lib/location.js'
+import cloudinary from "../lib/cloudinary.js"
+
+function escapeRegex(s) {
+    return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
 
 export const createRecipe = async (req, res) => {
     try {
@@ -9,6 +14,7 @@ export const createRecipe = async (req, res) => {
         }
 
         const {
+            recipePic,
             title,
             description,
             ingredients,
@@ -29,6 +35,11 @@ export const createRecipe = async (req, res) => {
         if (desc.length > 500)
             return res.status(400)
                 .json({ message: 'Description is too long. Max 500 characters.' })
+
+        if (typeof recipePic !== 'string')
+            return res
+                .status(400)
+                .json({ message: 'Recipe picture is of wrong format.' })
 
         if (!Array.isArray(ingredients) || ingredients.length === 0)
             return res.status(400)
@@ -72,10 +83,27 @@ export const createRecipe = async (req, res) => {
             return res.status(400)
                 .json({ message: 'Missing coordinates for this location.' })
 
+        const isDataUrl = recipePic.startsWith('data:')
+        const uploadSource = isDataUrl ? recipePic : `data:image/jpeg;base64,${recipePic}`
+
+        const upload = await cloudinary.uploader.upload(uploadSource, {
+            folder: `local-bite/users/${userId}/recipes`
+        })
+
+        if (!upload?.secure_url)
+            return res
+                .status(502)
+                .json({ message: 'Upload failed.' })
+
         const newRecipe = new Recipe({
             authorId: userId,
             title: title.trim(),
             description: desc,
+            recipePic: {
+                imageURL: upload.secure_url,
+                publicId: upload.public_id,
+                postedAt: new Date(upload.created_at || Date.now())
+            },
             ingredients,
             instructions,
             locationId: locDoc._id,
@@ -89,13 +117,18 @@ export const createRecipe = async (req, res) => {
         await saved.populate({
             path: 'authorId',
             select: 'fullname username'
-        }).lean()
+        })
 
         return res.status(201)
             .json({
                 _id: saved._id,
                 title: saved.title,
                 description: saved.description,
+                recipePic: {
+                    imageURL: upload.secure_url,
+                    publicId: upload.public_id,
+                    postedAt: new Date(upload.created_at || Date.now())
+                },
                 ingredients: saved.ingredients,
                 instructions: saved.instructions,
                 point: saved.point,
@@ -138,6 +171,7 @@ export const getRecipe = async (req, res) => {
                 _id: recipe._id,
                 title: recipe.title,
                 description: recipe.description,
+                recipePic: recipe.recipePic.imageURL,
                 ingredients: recipe.ingredients,
                 instructions: recipe.instructions,
                 point: recipe.point,
@@ -152,5 +186,147 @@ export const getRecipe = async (req, res) => {
         console.log('Failed to get recipe')
         return res.status(404)
             .json({ message: 'Failed to get recipe' })
+    }
+}
+
+export const getAllRecipes = async (req, res) => {
+    try {
+        const {
+            limit = '20',
+            cursor,
+            q,
+            dishTypes,
+            country,
+            authorId,
+            nearLng, nearLat, maxKm,
+            sort = 'createdAt:desc'
+        } = req.query
+
+        const filter = {}
+
+        if (authorId)
+            filter.authorId = authorId
+
+        if (dishTypes) {
+            const arr = dishTypes.split(',').map(s => s.trim()).filter(Boolean)
+            if (arr.length)
+                filter.dishTypes = { $in: arr }
+        }
+
+        if (country)
+            filter['locationSnapshot.country'] = country
+
+        if (q && q.trim()) {
+            const rx = new RegExp(escapeRegex(q.trim()), 'i')
+            filter.$or = [
+                { title: rx },
+                { description: rx },
+                { 'ingredients.ingredient': rx },
+            ]
+        }
+
+        if (nearLng && nearLat) {
+            const maxMeters = Number(maxKm ?? '10') * 1000
+            filter.point = {
+                $near: {
+                    $geometry: {
+                        type: 'Point',
+                        coordinates: [Number(nearLng), Number(nearLat)]
+                    },
+                    $maxDistance: maxMeters,
+                },
+            }
+        }
+
+        const pageSize = Math.min(Math.max(parseInt(String(limit), 10) || 20, 1), 100)
+
+        let [sortField, sortDir] = sort.split(':')
+        if (!sortField)
+            sortField = 'createdAt'
+
+        const sortOrder = sortDir === 'asc' ? 1 : -1
+
+        const useIdCursor = sortField === 'createdAt' && sortOrder === -1 && !nearLng
+
+        if (cursor && useIdCursor)
+            filter._id = { $lt: cursor }
+
+        const projection = {
+            _id: 1,
+            title: 1,
+            description: 1,
+            dishTypes: 1,
+            ingredients: 1,
+            instructions: 1,
+            point: 1,
+            locationSnapshot: 1,
+            locationId: 1,
+            authorId: 1,
+            createdAt: 1,
+            updatedAt: 1,
+            recipePic: { $ifNull: ['$recipePic.imageURL', null] },
+        }
+
+        const pipeline = [{ $match: filter }]
+
+        if (!nearLng) {
+            pipeline.push({ $sort: { [sortField]: sortOrder, _id: -1 } })
+            if (!useIdCursor && cursor) { }
+        } else {
+            pipeline.shift()
+            pipeline.unshift({
+                $geoNear: {
+                    near: {
+                        type: 'Point',
+                        coordinates: [Number(nearLng), Number(nearLat)]
+                    },
+                    distanceField: 'distM',
+                    maxDistance: Number(maxKm ?? '10') * 1000,
+                    query: filter,
+                    spherical: true,
+                }
+            })
+        }
+
+        pipeline.push({
+            $project: {
+                _id: 1,
+                title: 1,
+                description: 1,
+                dishTypes: 1,
+                ingredients: 1,
+                instructions: 1,
+                point: 1,
+                locationSnapshot: 1,
+                locationId: 1,
+                authorId: 1,
+                createdAt: 1,
+                updatedAt: 1,
+                recipePic: '$recipePic.imageURL',
+                ...(nearLng ? { distM: 1 } : {})
+            }
+        })
+
+        pipeline.push({ $limit: pageSize + 1 })
+
+        const docs = await Recipe
+            .aggregate(pipeline)
+            .collation({ locale: 'en', strength: 2 })
+
+        const hasNextPage = docs.length > pageSize
+        const items = hasNextPage ? docs.slice(0, pageSize) : docs
+        const nextCursor = hasNextPage ? String(items[items.length - 1]._id) : null
+
+        return res.status(200).json({
+            items,
+            nextCursor,
+            hasNextPage,
+            pageSize,
+            count: items.length,
+        })
+    } catch (e) {
+        console.log('Failed to get all recipes')
+        return res.status(404)
+            .json({ message: 'Failed to get all recipes' })
     }
 }

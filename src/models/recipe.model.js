@@ -84,7 +84,7 @@ const RecipeSchema = new mongoose.Schema(
             enum: ['main', 'side', 'sauce', 'pastry', 'dessert', 'soup', 'drink', 'salad', 'other'],
             index: true
         },
-        recipePic:{
+        recipePic: {
             type: RecipePicSchema,
             default: undefined
         },
@@ -127,7 +127,7 @@ const RecipeSchema = new mongoose.Schema(
             }
         },
 
-        
+
     },
     { timestamps: true }
 );
@@ -140,9 +140,13 @@ RecipeSchema.index({
     'locationSnapshot.area': 1,
     'locationSnapshot.locality': 1
 })
-RecipeSchema.index(
-    { authorId: 1, title: 1 },
-    { unique: true, collation: { locale: 'en', strength: 2 } }
-)
+RecipeSchema.index({ authorId: 1 })
+RecipeSchema.index({ createdAt: -1, _id: -1 })
+
+RecipeSchema.index({
+    title: 'text',
+    description: 'text',
+    'ingredients.ingredient': 'text'
+})
 
 export const Recipe = mongoose.model('Recipe', RecipeSchema);

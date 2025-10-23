@@ -5,13 +5,49 @@ import { Location } from '../models/location.model.js'
 
 countries.registerLocale(en);
 
-export const deriveISO2 = (countryName) => {
-    if (!countryName)
-        return null
-    const normalized = countryName.trim()
-        .replace(/^u\.?s\.?a?$/i, 'United States')
-        .replace(/^uk$/i, 'United Kingdom');
-    return countries.getAlpha2Code(normalized, 'en') || null
+const ALIASES = {
+  'u.s.': 'United States',
+  'u.s.a': 'United States',
+  'usa': 'United States',
+  'us': 'United States',
+  'u.k.': 'United Kingdom',
+  'uk': 'United Kingdom',
+  'uae': 'United Arab Emirates',
+  'r.o.c.': 'Taiwan',
+};
+
+export function deriveISO2(countryInput) {
+  if (!countryInput) return null;
+
+  const raw = countryInput.trim();
+  const lowered = raw.toLowerCase().replace(/\s+/g, ' ').replace(/\.$/, '');
+
+  if (ALIASES[lowered]) {
+    const code = countries.getAlpha2Code(ALIASES[lowered], 'en');
+    return code || null;
+  }
+
+  if (/^[A-Za-z]{2}$/.test(raw)) {
+    const upper = raw.toUpperCase();
+    const valid = countries.getName(upper, 'en');
+    return valid ? upper : null;
+  }
+
+  if (/^[A-Za-z]{3}$/.test(raw)) {
+    const upper3 = raw.toUpperCase();
+    const all = countries.getNames('en'); 
+    const alpha2 = Object.keys(all).find(
+      a2 => countries.getAlpha3Code(all[a2], 'en') === upper3
+    );
+    return alpha2 || null;
+  }
+
+  const code = countries.getAlpha2Code(raw, 'en'); 
+  if (code) return code;
+
+  const pretty = raw.replace(/\b\w/g, c => c.toUpperCase());
+  const code2 = countries.getAlpha2Code(pretty, 'en');
+  return code2 || null;
 }
 
 export const maptilerGeocode = async (
@@ -61,14 +97,14 @@ const makeKey = (locality, area, countryCode) =>
     [norm(locality), norm(area || ''), norm(countryCode)].join('|')
 
 export async function resolveOrCreateLocation(
-    { locality, area = '', country },
+    { locality, area, country },
     { storeRaw = false } = {}) {
 
-    if (!locality || !country) 
+    if (!locality || !area || !country)
         throw new Error('Missing locality or country')
 
     const country_code = deriveISO2(country)
-    if (!country_code) 
+    if (!country_code)
         throw new Error('Unknown country name.')
 
     const key = makeKey(locality, area, country_code)
@@ -90,13 +126,13 @@ export async function resolveOrCreateLocation(
             area,
             country,
             country_code,
-            point: { type: 'Point', coordinates }, 
-            provider: storeRaw ? { name: 'maptiler', raw: feature } : { name: 'maptiler' },
+            point: { type: 'Point', coordinates },
+            provider: { name: 'maptiler' }
         })
     } catch (e) {
         if (e?.code === 11000) {
             const again = await Location.findOne({ key })
-            if (again) 
+            if (again)
                 return again
         }
         throw e
