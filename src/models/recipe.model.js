@@ -81,7 +81,7 @@ const RecipeSchema = new mongoose.Schema(
         dishTypes: {
             type: [String],
             default: [],
-            enum: ['main', 'side', 'sauce', 'pastry', 'dessert', 'soup', 'drink', 'salad', 'other'],
+            enum: ['Breakfast', 'Lunch', 'Dinner', 'Dessert', 'Vegan', 'BBQ', 'Soup', 'Salad', 'Drink'],
             index: true
         },
         recipePic: {
