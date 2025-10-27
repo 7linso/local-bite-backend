@@ -2,7 +2,7 @@ import { Recipe } from '../models/recipe.model.js'
 import { resolveOrCreateLocation } from '../lib/location.js'
 import cloudinary from "../lib/cloudinary.js"
 
-function escapeRegex(s) {
+const escapeRegex = (s) => {
     return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 }
 
@@ -328,5 +328,45 @@ export const getAllRecipes = async (req, res) => {
         console.log('Failed to get all recipes')
         return res.status(404)
             .json({ message: 'Failed to get all recipes' })
+    }
+}
+
+export const deleteRecipe = async (req, res) => {
+    try {
+        const userId = req.userId
+        const { recipeId } = req.params
+
+        if (!userId)
+            return res.status(401)
+                .json({ message: 'Unauthorized.' })
+
+        if (!recipeId)
+            return res.status(400)
+                .json({ message: 'Missing recipe id.' })
+
+        const recipe = await Recipe.findById(recipeId)
+
+        if (!recipe)
+            return res.status(404)
+                .json({ message: 'Recipe not found.' })
+
+        if (recipe.authorId.toString() !== userId.toString())
+            return res.status(403)
+                .json({ message: 'Unauthorized to delete this recipe.' })
+
+
+        const recipePic = recipe.recipePic
+        if (recipePic)
+            await cloudinary.uploader.destroy(recipePic.publicId, { resource_type: "image" })
+
+        await Recipe.deleteOne({ _id: recipeId })
+
+        return res.status(200)
+            .json({ message: 'Recipe Deleted!' })
+
+    } catch (e) {
+        console.log('Error deleting recipe', e)
+        return res.status(400)
+            .json({ message: 'Internal Server Error deleting recipe.' })
     }
 }
