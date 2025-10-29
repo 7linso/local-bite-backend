@@ -188,7 +188,6 @@ export const getRecipe = async (req, res) => {
             .json({ message: 'Failed to get recipe' })
     }
 }
-
 export const getAllRecipes = async (req, res) => {
     try {
         const {
@@ -198,23 +197,31 @@ export const getAllRecipes = async (req, res) => {
             dishTypes,
             country,
             authorId,
-            nearLng, nearLat, maxKm,
+            nearLng,
+            nearLat,
+            maxKm,
             sort = 'createdAt:desc'
         } = req.query
 
         const filter = {}
 
-        if (authorId)
+        if (authorId) {
             filter.authorId = authorId
-
-        if (dishTypes) {
-            const arr = dishTypes.split(',').map(s => s.trim()).filter(Boolean)
-            if (arr.length)
-                filter.dishTypes = { $in: arr }
         }
 
-        if (country)
+        if (dishTypes) {
+            const arr = dishTypes
+                .split(',')
+                .map(s => s.trim())
+                .filter(Boolean)
+            if (arr.length) {
+                filter.dishTypes = { $in: arr }
+            }
+        }
+
+        if (country) {
             filter['locationSnapshot.country'] = country
+        }
 
         if (q && q.trim()) {
             const rx = new RegExp(escapeRegex(q.trim()), 'i')
@@ -225,67 +232,48 @@ export const getAllRecipes = async (req, res) => {
             ]
         }
 
-        if (nearLng && nearLat) {
-            const maxMeters = Number(maxKm ?? '10') * 1000
-            filter.point = {
-                $near: {
-                    $geometry: {
-                        type: 'Point',
-                        coordinates: [Number(nearLng), Number(nearLat)]
-                    },
-                    $maxDistance: maxMeters,
-                },
-            }
-        }
-
         const pageSize = Math.min(Math.max(parseInt(String(limit), 10) || 20, 1), 100)
 
         let [sortField, sortDir] = sort.split(':')
-        if (!sortField)
-            sortField = 'createdAt'
-
+        if (!sortField) sortField = 'createdAt'
         const sortOrder = sortDir === 'asc' ? 1 : -1
 
         const useIdCursor = sortField === 'createdAt' && sortOrder === -1 && !nearLng
 
-        if (cursor && useIdCursor)
+        if (cursor && useIdCursor) {
             filter._id = { $lt: cursor }
-
-        const projection = {
-            _id: 1,
-            title: 1,
-            description: 1,
-            dishTypes: 1,
-            ingredients: 1,
-            instructions: 1,
-            point: 1,
-            locationSnapshot: 1,
-            locationId: 1,
-            authorId: 1,
-            createdAt: 1,
-            updatedAt: 1,
-            recipePic: { $ifNull: ['$recipePic.imageURL', null] },
         }
 
-        const pipeline = [{ $match: filter }]
+        const hasNear =
+            nearLng !== undefined && nearLng !== null &&
+            nearLat !== undefined && nearLat !== null
 
-        if (!nearLng) {
-            pipeline.push({ $sort: { [sortField]: sortOrder, _id: -1 } })
-            if (!useIdCursor && cursor) { }
-        } else {
-            pipeline.shift()
-            pipeline.unshift({
+        const pipeline = []
+
+        if (hasNear) {
+            const maxKmNum = maxKm !== undefined ? Number(maxKm) : 10
+
+            const nonGeoFilter = { ...filter }
+            delete nonGeoFilter.point
+
+            pipeline.push({
                 $geoNear: {
                     near: {
                         type: 'Point',
                         coordinates: [Number(nearLng), Number(nearLat)]
                     },
                     distanceField: 'distM',
-                    maxDistance: Number(maxKm ?? '10') * 1000,
-                    query: filter,
+                    maxDistance: maxKmNum * 1000,
+                    query: nonGeoFilter,
                     spherical: true,
                 }
             })
+        } else {
+            pipeline.push({ $match: filter })
+            pipeline.push({ $sort: { [sortField]: sortOrder, _id: -1 } })
+            if (!useIdCursor && cursor) {
+                // implement  cursor for arbitrary sort
+            }
         }
 
         pipeline.push({
@@ -303,7 +291,7 @@ export const getAllRecipes = async (req, res) => {
                 createdAt: 1,
                 updatedAt: 1,
                 recipePic: '$recipePic.imageURL',
-                ...(nearLng ? { distM: 1 } : {})
+                ...(hasNear ? { distM: 1 } : {})
             }
         })
 
@@ -325,11 +313,11 @@ export const getAllRecipes = async (req, res) => {
             count: items.length,
         })
     } catch (e) {
-        console.log('Failed to get all recipes')
-        return res.status(404)
-            .json({ message: 'Failed to get all recipes' })
+        console.error('Failed to get all recipes', e)
+        return res.status(500).json({ message: 'Failed to get all recipes' })
     }
 }
+
 
 export const deleteRecipe = async (req, res) => {
     try {
@@ -404,7 +392,6 @@ export const editRecipe = async (req, res) => {
             location,
             dishTypes,
         } = body
-
 
         const updated = {}
 
@@ -538,7 +525,6 @@ export const editRecipe = async (req, res) => {
                 updated.point = locDoc.point
             }
         }
-
 
         if (dishTypes !== undefined && dishTypes && dishTypes !== recipe.dishTypes) {
             if (!Array.isArray(dishTypes))
