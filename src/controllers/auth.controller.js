@@ -1,6 +1,7 @@
 import bcrypt from "bcryptjs"
 import cloudinary from "../lib/cloudinary.js"
 import { User } from "../models/auth.model.js"
+import { Recipe } from "../models/recipe.model.js"
 import { generateToken } from '../lib/utils.js'
 import { resolveOrCreateLocation } from '../lib/location.js'
 import 'dotenv/config'
@@ -498,6 +499,9 @@ export const deleteProfile = async (req, res) => {
         if (profilePic)
             await cloudinary.uploader.destroy(profilePic.publicId, { resource_type: "image" })
 
+        for (const recipeId of user.favs)
+            await Recipe.findByIdAndUpdate(recipeId, { $inc: { likeCount: -1 } })
+
         await User.deleteOne({ _id: userId })
 
         res.clearCookie('jwt', {
@@ -505,6 +509,8 @@ export const deleteProfile = async (req, res) => {
             sameSite: 'strict',
             secure: process.env.NODE_ENV !== 'development'
         })
+
+
 
         return res
             .status(204)

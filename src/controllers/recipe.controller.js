@@ -1,6 +1,12 @@
 import { Recipe } from '../models/recipe.model.js'
 import { resolveOrCreateLocation } from '../lib/location.js'
 import cloudinary from "../lib/cloudinary.js"
+import { User } from '../models/auth.model.js'
+import jwt from 'jsonwebtoken';
+import mongoose from 'mongoose'
+
+const { ObjectId } = mongoose.Types
+
 
 const escapeRegex = (s) => {
     return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
@@ -124,11 +130,7 @@ export const createRecipe = async (req, res) => {
                 _id: saved._id,
                 title: saved.title,
                 description: saved.description,
-                recipePic: {
-                    imageURL: upload.secure_url,
-                    publicId: upload.public_id,
-                    postedAt: new Date(upload.created_at || Date.now())
-                },
+                recipePic: saved.recipePic.imageURL,
                 ingredients: saved.ingredients,
                 instructions: saved.instructions,
                 point: saved.point,
@@ -136,6 +138,7 @@ export const createRecipe = async (req, res) => {
                 locationId: saved.locationId?._id,
                 author: saved.authorId,
                 dishTypes: saved.dishTypes ?? [],
+                likeCount: saved.likeCount,
                 createdAt: saved.createdAt,
                 updatedAt: saved.updatedAt
             })
@@ -166,6 +169,23 @@ export const getRecipe = async (req, res) => {
             return res.status(404)
                 .json({ message: 'Recipe not found' })
 
+        let isLiked = false
+        const token = req.cookies?.jwt
+        if (token) {
+            try {
+                const decoded = jwt.verify(token, process.env.JWT_SECRET);
+                const userId = decoded.userId;
+                const user = await User.findById(userId).select('favs').lean();
+                if (user?.favs?.length) {
+                    isLiked = user.favs.some(id => id.equals(recipe._id));
+                }
+                res.set('Vary', 'Cookie');
+                res.set('Cache-Control', 'private, no-store');
+            } catch (e) {
+                console.log('[likes] personalization error:', e.message);
+            }
+        }
+
         return res.status(200)
             .json({
                 _id: recipe._id,
@@ -179,6 +199,8 @@ export const getRecipe = async (req, res) => {
                 locationId: recipe.locationId?._id,
                 authorId: recipe.authorId,
                 dishTypes: recipe.dishTypes ?? [],
+                likeCount: recipe.likeCount,
+                isLiked: isLiked,
                 createdAt: recipe.createdAt,
                 updatedAt: recipe.updatedAt
             })
@@ -188,6 +210,7 @@ export const getRecipe = async (req, res) => {
             .json({ message: 'Failed to get recipe' })
     }
 }
+
 export const getAllRecipes = async (req, res) => {
     try {
         const {
@@ -205,9 +228,8 @@ export const getAllRecipes = async (req, res) => {
 
         const filter = {}
 
-        if (authorId) {
-            filter.authorId = authorId
-        }
+        if (authorId && ObjectId.isValid(authorId)) 
+            filter.authorId = new ObjectId(authorId)
 
         if (dishTypes) {
             const arr = dishTypes
@@ -219,9 +241,8 @@ export const getAllRecipes = async (req, res) => {
             }
         }
 
-        if (country) {
+        if (country && country !== 'All') 
             filter['locationSnapshot.country'] = country
-        }
 
         if (q && q.trim()) {
             const rx = new RegExp(escapeRegex(q.trim()), 'i')
@@ -240,9 +261,8 @@ export const getAllRecipes = async (req, res) => {
 
         const useIdCursor = sortField === 'createdAt' && sortOrder === -1 && !nearLng
 
-        if (cursor && useIdCursor) {
-            filter._id = { $lt: cursor }
-        }
+        if (cursor && useIdCursor && ObjectId.isValid(cursor)) 
+            filter._id = { $lt: new ObjectId(cursor) } 
 
         const hasNear =
             nearLng !== undefined && nearLng !== null &&
@@ -288,6 +308,7 @@ export const getAllRecipes = async (req, res) => {
                 locationSnapshot: 1,
                 locationId: 1,
                 authorId: 1,
+                likeCount: 1,
                 createdAt: 1,
                 updatedAt: 1,
                 recipePic: '$recipePic.imageURL',
@@ -305,6 +326,25 @@ export const getAllRecipes = async (req, res) => {
         const items = hasNextPage ? docs.slice(0, pageSize) : docs
         const nextCursor = hasNextPage ? String(items[items.length - 1]._id) : null
 
+        const token = req.cookies?.jwt;
+        if (token) {
+            try {
+                const { userId } = jwt.verify(token, process.env.JWT_SECRET);
+                const user = await User.findById(userId).select('favs').lean();
+
+                const favSet = new Set((user?.favs || []).map(id => id.toString()));
+
+                items.forEach(it => {
+                    it.isLiked = favSet.has(it._id.toString());
+                });
+
+                res.set('Vary', 'Cookie');
+                res.set('Cache-Control', 'private, no-store');
+            } catch (e) {
+                console.log('[likes] personalization error:', e.message);
+            }
+        }
+
         return res.status(200).json({
             items,
             nextCursor,
@@ -317,7 +357,6 @@ export const getAllRecipes = async (req, res) => {
         return res.status(500).json({ message: 'Failed to get all recipes' })
     }
 }
-
 
 export const deleteRecipe = async (req, res) => {
     try {
@@ -347,6 +386,11 @@ export const deleteRecipe = async (req, res) => {
             await cloudinary.uploader.destroy(recipePic.publicId, { resource_type: "image" })
 
         await Recipe.deleteOne({ _id: recipeId })
+
+        await User.updateMany(
+            { favs: recipeId },
+            { $pull: { favs: recipeId } }
+        )
 
         return res.status(200)
             .json({ message: 'Recipe Deleted!' })
@@ -556,6 +600,7 @@ export const editRecipe = async (req, res) => {
             locationId: updatedRecipe.locationId?._id,
             authorId: updatedRecipe.authorId,
             dishTypes: updatedRecipe.dishTypes ?? [],
+            likeCount: updatedRecipe.likeCount,
             createdAt: updatedRecipe.createdAt,
             updatedAt: updatedRecipe.updatedAt
         })
@@ -568,5 +613,119 @@ export const editRecipe = async (req, res) => {
         console.error('Internal Server Error creating recipe:', e)
         return res.status(500)
             .json({ message: 'Failed to create recipe.' })
+    }
+}
+
+export const likeRecipe = async (req, res) => {
+    try {
+        const userId = req.userId
+        const { recipeId } = req.params
+
+        if (!userId)
+            return res.status(401)
+                .json({ message: 'Unauthorized.' })
+
+        if (!recipeId)
+            return res.status(400)
+                .json({ message: 'Missing recipe id.' })
+
+        const recipe = await Recipe.findById(recipeId)
+
+        if (!recipe)
+            return res.status(404)
+                .json({ message: 'Recipe not found.' })
+
+        const user = await User.findById(userId)
+
+        if (!user)
+            return res.status(404)
+                .json({ message: 'User not found.' })
+
+        const alreadyLiked = user.favs.some(id => id.equals(recipeId))
+
+        if (!alreadyLiked) {
+            await User.updateOne({ _id: userId }, { $addToSet: { favs: recipeId } })
+            recipe.likeCount += 1
+            await recipe.save()
+        }
+
+        return res.status(200).json({
+            _id: recipe._id,
+            title: recipe.title,
+            description: recipe.description,
+            recipePic: recipe.recipePic?.imageURL,
+            ingredients: recipe.ingredients,
+            instructions: recipe.instructions,
+            point: recipe.point,
+            locationSnapshot: recipe.locationSnapshot,
+            locationId: recipe.locationId?._id,
+            authorId: recipe.authorId,
+            dishTypes: recipe.dishTypes ?? [],
+            likeCount: recipe.likeCount,
+            createdAt: recipe.createdAt,
+            updatedAt: recipe.updatedAt
+        })
+
+    } catch (e) {
+        console.error('Internal Server Error liking recipe:', e)
+        return res.status(500)
+            .json({ message: 'Failed to like recipe.' })
+    }
+}
+
+export const dislikeRecipe = async (req, res) => {
+    try {
+        const userId = req.userId
+        const { recipeId } = req.params
+
+        if (!userId)
+            return res.status(401)
+                .json({ message: 'Unauthorized.' })
+
+        if (!recipeId)
+            return res.status(400)
+                .json({ message: 'Missing recipe id.' })
+
+        const recipe = await Recipe.findById(recipeId)
+
+        if (!recipe)
+            return res.status(404)
+                .json({ message: 'Recipe not found.' })
+
+        const user = await User.findById(userId)
+
+        if (!user)
+            return res.status(404)
+                .json({ message: 'User not found.' })
+
+        const alreadyLiked = user.favs.some(id => id.equals(recipeId))
+
+        if (alreadyLiked) {
+            await User.updateOne({ _id: userId }, { $pull: { favs: recipeId } })
+            recipe.likeCount = Math.max(0, recipe.likeCount - 1)
+            await recipe.save()
+        }
+
+        return res.status(200).json({
+            _id: recipe._id,
+            title: recipe.title,
+            description: recipe.description,
+            recipePic: recipe.recipePic?.imageURL,
+            ingredients: recipe.ingredients,
+            instructions: recipe.instructions,
+            point: recipe.point,
+            locationSnapshot: recipe.locationSnapshot,
+            locationId: recipe.locationId?._id,
+            authorId: recipe.authorId,
+            dishTypes: recipe.dishTypes ?? [],
+            likeCount: recipe.likeCount,
+            createdAt: recipe.createdAt,
+            updatedAt: recipe.updatedAt
+        })
+
+    } catch (e) {
+        console.error('Internal Server Error liking recipe:', e)
+        return res.status(500)
+            .json({ message: 'Failed to like recipe.' })
     }
 }

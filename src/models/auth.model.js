@@ -54,9 +54,12 @@ const UserSchema = new mongoose.Schema(
             type: ProfilePicSchema,
             default: undefined
         },
-        
+
         favs: {
-            type: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Recipe' }],
+            type: [{
+                type: mongoose.Schema.Types.ObjectId,
+                ref: 'Recipe'
+            }],
             default: [],
         },
         defaultLocationId: {
