@@ -228,7 +228,7 @@ export const getAllRecipes = async (req, res) => {
 
         const filter = {}
 
-        if (authorId && ObjectId.isValid(authorId)) 
+        if (authorId && ObjectId.isValid(authorId))
             filter.authorId = new ObjectId(authorId)
 
         if (dishTypes) {
@@ -241,7 +241,7 @@ export const getAllRecipes = async (req, res) => {
             }
         }
 
-        if (country && country !== 'All') 
+        if (country && country !== 'All')
             filter['locationSnapshot.country'] = country
 
         if (q && q.trim()) {
@@ -261,8 +261,8 @@ export const getAllRecipes = async (req, res) => {
 
         const useIdCursor = sortField === 'createdAt' && sortOrder === -1 && !nearLng
 
-        if (cursor && useIdCursor && ObjectId.isValid(cursor)) 
-            filter._id = { $lt: new ObjectId(cursor) } 
+        if (cursor && useIdCursor && ObjectId.isValid(cursor))
+            filter._id = { $lt: new ObjectId(cursor) }
 
         const hasNear =
             nearLng !== undefined && nearLng !== null &&
@@ -727,5 +727,98 @@ export const dislikeRecipe = async (req, res) => {
         console.error('Internal Server Error liking recipe:', e)
         return res.status(500)
             .json({ message: 'Failed to like recipe.' })
+    }
+}
+
+export const getLikedRecipes = async (req, res) => {
+    try {
+        const {
+            limit = '20',
+            cursor,
+            sort = '_id:desc',
+        } = req.query
+
+        const userId = req.userId
+        if (!userId)
+            return res.status(401)
+                .json({ message: 'Unauthorized' })
+
+        const pageSize = Math.min(Math.max(parseInt(String(limit), 10) || 20, 1), 100)
+
+        let [sortField, sortDir] = String(sort).split(':')
+        if (!sortField) sortField = '_id'
+        const sortOrder = sortDir === 'asc' ? 1 : -1
+
+        const user = await User.findById(userId).select('favs').lean()
+
+        if (!user)
+            return res.status(401)
+                .json({ message: 'Unauthorized.' })
+
+        const favIds = (user?.favs ?? []).map(id => new ObjectId(id))
+
+        if (!favIds.length) 
+            return res.status(200).json({
+                items: [],
+                nextCursor: null,
+                hasNextPage: false,
+                pageSize,
+                count: 0,
+            })
+
+        const match = { _id: { $in: favIds } }
+
+        if (cursor && ObjectId.isValid(cursor) && sortField === '_id') {
+            const cur = new ObjectId(cursor)
+            if (sortOrder === -1) {
+                match._id = { $in: favIds, $lt: cur }
+            } else {
+                match._id = { $in: favIds, $gt: cur }
+            }
+        }
+
+        const pipeline = [
+            { $match: match },
+            { $sort: { [sortField]: sortOrder, _id: sortOrder } },
+            { $limit: pageSize + 1 },
+            {
+                $project: {
+                    _id: 1,
+                    title: 1,
+                    description: 1,
+                    dishTypes: 1,
+                    ingredients: 1,
+                    instructions: 1,
+                    point: 1,
+                    locationSnapshot: 1,
+                    locationId: 1,
+                    authorId: 1,
+                    likeCount: 1,
+                    createdAt: 1,
+                    updatedAt: 1,
+                    recipePic: '$recipePic.imageURL',
+                }
+            }
+        ]
+
+        const docs = await Recipe.aggregate(pipeline).collation({ locale: 'en', strength: 2 })
+
+        const hasNextPage = docs.length > pageSize
+        const items = hasNextPage ? docs.slice(0, pageSize) : docs
+        const nextCursor = hasNextPage ? String(items[items.length - 1]._id) : null
+
+        const itemsWithLiked = items.map(r => ({ ...r, isLiked: true }))
+
+        return res.status(200).json({
+            items: itemsWithLiked,
+            nextCursor,
+            hasNextPage,
+            pageSize,
+            count: items.length,
+        })
+    } catch (e) {
+        console.log('Failed to get liked recipes', e)
+        return res.status(500)
+            .json({ message: `Failed to get liked recipes ${e}` })
     }
 }

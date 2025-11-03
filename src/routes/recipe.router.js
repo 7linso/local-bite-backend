@@ -7,12 +7,15 @@ import {
     editRecipe,
     getAllRecipes,
     likeRecipe,
-    dislikeRecipe
+    dislikeRecipe,
+    getLikedRecipes
 } from '../controllers/recipe.controller.js'
 
 const router = express.Router()
 
 router.post('/', requireAuth, createRecipe)
+
+router.get('/liked', requireAuth, getLikedRecipes)
 
 router.get('/:recipeId', getRecipe)
 
