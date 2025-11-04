@@ -6,7 +6,8 @@ import {
     me,
     updateProfilePic,
     updateProfile,
-    deleteProfile
+    deleteProfile,
+    getProfile
 } from '../controllers/auth.controller.js'
 import { requireAuth } from '../middleware/auth.middleware.js'
 
@@ -25,5 +26,7 @@ router.patch('/update-profile-pic', requireAuth, updateProfilePic)
 router.patch('/update-profile', requireAuth, updateProfile)
 
 router.delete('/delete-profile', requireAuth, deleteProfile)
+
+router.get('/:username', getProfile)
 
 export default router

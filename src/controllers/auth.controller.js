@@ -523,3 +523,33 @@ export const deleteProfile = async (req, res) => {
             .json({ message: 'Internal Server Error deleting profile.' })
     }
 }
+
+export const getProfile = async (req, res) => {
+    try {
+        const { username } = req.params
+
+        if (!username)
+            return res.status(400)
+                .json({ message: 'Missing profile username' })
+
+        const user = await User.findOne({ username })
+
+        if (!user)
+            return res.status(404)
+                .json({ message: 'User not found' })
+
+        return res
+            .status(200)
+            .json({
+                _id: user._id,
+                fullname: user.fullname,
+                username: user.username,
+                bio: user.bio ?? null,
+                profilePic: user.profilePic?.imageURL ?? null
+            })
+    } catch (e) {
+        console.log(`Error getting profile info: ${e}`);
+        return res.status(400)
+            .json({ message: 'Internal Server Error getting profile.' })
+    }
+}
