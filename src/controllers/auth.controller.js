@@ -544,6 +544,7 @@ export const getProfile = async (req, res) => {
                 _id: user._id,
                 fullname: user.fullname,
                 username: user.username,
+                email: user.email,
                 bio: user.bio ?? null,
                 profilePic: user.profilePic?.imageURL ?? null
             })
